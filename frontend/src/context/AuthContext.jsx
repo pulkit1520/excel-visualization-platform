@@ -137,17 +137,20 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (credentials, rememberMe = false) => {
-    console.log('AuthContext: Starting login process with rememberMe:', rememberMe);
+    console.log('AuthContext: Starting login process with credentials:', { email: credentials.email }, 'rememberMe:', rememberMe);
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       const response = await authService.login(credentials);
       console.log('AuthContext: Login API response received:', response);
+      console.log('AuthContext: User object from login response:', JSON.stringify(response.user, null, 2));
+      console.log('AuthContext: User role from login response:', response.user?.role, 'Type:', typeof response.user?.role);
+      
       dispatch({ type: 'LOGIN_SUCCESS', payload: { ...response, rememberMe } });
-      console.log('AuthContext: LOGIN_SUCCESS dispatched');
+      console.log('AuthContext: LOGIN_SUCCESS dispatched successfully');
       toast.success('Login successful!');
       return response;
     } catch (error) {
-      console.log('AuthContext: Login failed with error:', error);
+      console.error('AuthContext: Login failed with error:', error);
       dispatch({ type: 'SET_LOADING', payload: false });
       toast.error(error.response?.data?.message || 'Login failed');
       throw error;

@@ -56,105 +56,56 @@ export const DashboardProvider = ({ children }) => {
       
       console.log('📊 Updating dashboard stats...');
       
-      // First try to get stats from dedicated endpoint
-      let totalFiles = 0;
-      let totalSize = 0;
-      let totalDataPoints = 0;
-      let files = [];
-      
+      // Use the new accurate dashboard stats endpoint
       try {
-        console.log('📊 Trying dedicated stats endpoint...');
-        const statsResponse = await fileService.getFileStats();
-        console.log('📊 Stats endpoint response:', statsResponse);
+        console.log('📊 Fetching dashboard stats from dedicated endpoint...');
+        const dashboardResponse = await fileService.getDashboardStats();
+        console.log('📊 Dashboard stats response:', dashboardResponse);
         
-        if (statsResponse && statsResponse.stats) {
-          totalFiles = statsResponse.stats.totalFiles || 0;
-          totalSize = statsResponse.stats.totalSize || 0;
-          totalDataPoints = statsResponse.stats.totalDataPoints || statsResponse.stats.totalRows || 0;
-          console.log('📊 Using stats from dedicated endpoint:', { totalFiles, totalSize, totalDataPoints });
+        if (dashboardResponse && dashboardResponse.dashboardStats) {
+          const stats = dashboardResponse.dashboardStats;
+          const newStats = {
+            totalFiles: stats.totalFiles || 0,
+            totalAnalyses: stats.totalAnalyses || 0,
+            totalDataPoints: stats.totalDataPoints || 0,
+            totalSize: stats.totalSize || 0
+          };
+          
+          console.log('✅ New dashboard stats:', newStats);
+          console.log('📊 User info:', {
+            name: dashboardResponse.userName,
+            email: dashboardResponse.userEmail,
+            userId: dashboardResponse.userId
+          });
+          
+          if (dashboardResponse.discrepancy) {
+            const { filesUploadedDiff, storageUsedDiff } = dashboardResponse.discrepancy;
+            if (filesUploadedDiff !== 0 || storageUsedDiff !== 0) {
+              console.warn('⚠️ Discrepancy detected in user usage stats:', dashboardResponse.discrepancy);
+            }
+          }
+          
+          setDashboardStats(newStats);
+          
+          // Update recent activity from files details
+          const activities = (dashboardResponse.filesDetails || []).slice(0, 4).map(file => ({
+            action: `Uploaded ${file.name}`,
+            time: new Date(file.uploadedAt).toLocaleDateString(),
+            type: 'upload'
+          }));
+          
+          setRecentActivity(activities);
+          
+          return {
+            ...newStats,
+            activities
+          };
         }
-      } catch (statsError) {
-        console.warn('📊 Stats endpoint failed, falling back to individual file calculation:', statsError);
+      } catch (dashboardError) {
+        console.error('❌ Dashboard stats endpoint failed:', dashboardError);
+        throw dashboardError;
       }
       
-      // If stats endpoint failed or returned no data, calculate from individual files
-      if (totalFiles === 0) {
-        console.log('📊 Calculating stats from individual files...');
-        const filesResponse = await fileService.getFiles();
-        files = filesResponse.files || [];
-        
-        console.log('📁 Files fetched:', files.length);
-        console.log('📁 Full filesResponse:', filesResponse);
-        
-        // Log first few files to understand structure
-        if (files.length > 0) {
-          console.log('📁 First file structure:', files[0]);
-          console.log('📁 First file keys:', Object.keys(files[0]));
-        }
-        
-        // Calculate totals from files
-        totalFiles = files.length;
-        totalSize = files.reduce((sum, file) => {
-          const fileSize = file.fileSize || file.size || 0;
-          const fileName = file.originalName || file.name || 'Unknown';
-          const fileRows = file.totalRows || file.rows || 0;
-          console.log(`📁 File ${fileName}: size=${fileSize}, rows=${fileRows}`);
-          return sum + fileSize;
-        }, 0);
-        totalDataPoints = files.reduce((sum, file) => {
-          return sum + (file.totalRows || file.rows || 0);
-        }, 0);
-        
-        console.log('📈 Stats calculated from files:', { totalFiles, totalSize, totalDataPoints });
-      } else {
-        // Still fetch files for recent activity
-        try {
-          const filesResponse = await fileService.getFiles();
-          files = filesResponse.files || [];
-        } catch (filesError) {
-          console.warn('Failed to fetch files for recent activity:', filesError);
-          files = [];
-        }
-      }
-      
-      // Fetch analyses stats separately
-      let totalAnalyses = 0;
-      try {
-        const analysesResponse = await api.get('/analytics/stats');
-        totalAnalyses = analysesResponse.data.stats?.totalAnalyses || 0;
-      } catch (analysesError) {
-        console.warn('Failed to fetch analyses stats:', analysesError);
-        // Fallback: just set to 0 if analyses endpoint fails
-        totalAnalyses = 0;
-      }
-      
-      const newStats = {
-        totalFiles,
-        totalAnalyses,
-        totalDataPoints,
-        totalSize
-      };
-      
-      console.log('✅ New dashboard stats:', newStats);
-      
-      setDashboardStats(newStats);
-
-      // Update recent activity
-      const activities = files.slice(0, 4).map(file => ({
-        action: `Uploaded ${file.originalName}`,
-        time: new Date(file.createdAt || file.uploadedAt).toLocaleDateString(),
-        type: 'upload'
-      }));
-      
-      setRecentActivity(activities);
-      
-      return {
-        totalFiles,
-        totalAnalyses,
-        totalDataPoints,
-        totalSize,
-        activities
-      };
     } catch (error) {
       console.error('❌ Error updating dashboard stats:', error);
       setError('Failed to load dashboard data');
@@ -252,7 +203,7 @@ export const DashboardProvider = ({ children }) => {
     return [
       {
         title: 'Files Uploaded',
-        value: uploadCount.toString(),
+        value: dashboardStats.totalFiles.toString(),
         change: '+0%',
         icon: FileSpreadsheet,
         color: 'blue'

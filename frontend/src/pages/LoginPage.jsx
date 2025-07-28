@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import { BarChart3, Eye, EyeOff, Mail, Lock, ArrowLeft } from 'lucide-react';
+import { BarChart3, Eye, EyeOff, Mail, Lock, ArrowLeft, Shield, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { login, isLoading, isAuthenticated } = useAuth();
+  const { login, isLoading, isAuthenticated, user } = useAuth();
   
   const [formData, setFormData] = useState({
     email: '',
@@ -16,14 +16,23 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState({});
+  const [hasRedirected, setHasRedirected] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
 
-  // Redirect to dashboard when user becomes authenticated
+  // Simple redirect if user is already authenticated (on page load)
   useEffect(() => {
-    if (isAuthenticated) {
-      console.log('User is authenticated, redirecting to dashboard...');
-      navigate('/dashboard');
+    if (isAuthenticated && user && !isLoading) {
+      // Only redirect if user is already logged in (e.g., page refresh)
+      // Don't interfere with the login process
+      const userRole = user.role;
+      
+      if (userRole === 'admin') {
+        navigate('/admin');
+      } else if (userRole === 'user') {
+        navigate('/dashboard');
+      }
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, user, isLoading, navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -68,33 +77,41 @@ const LoginPage = () => {
 
     try {
       console.log('🔵 [LOGIN] Starting login with rememberMe:', rememberMe);
+      console.log('🔵 [LOGIN] Admin mode:', isAdminMode);
       
       const result = await login(formData, rememberMe);
       
-      console.log('🟢 [LOGIN] Login successful! Forcing redirect...');
+      console.log('🟢 [LOGIN] Login successful! User role:', result.user?.role);
       
-      // Force immediate redirect using window.location
-      // This bypasses React Router issues
-      window.location.href = '/dashboard';
+      // Validate admin mode login
+      if (isAdminMode && result.user?.role !== 'admin') {
+        console.log('🔴 [LOGIN] Admin mode enabled but user role is not admin');
+        toast.error('Access denied: Admin credentials required for admin login');
+        return;
+      }
+      
+      // Validate user mode login (optional - prevent admin from using user mode)
+      if (!isAdminMode && result.user?.role === 'admin') {
+        console.log('🟡 [LOGIN] Admin user trying to use regular login mode');
+        toast.error('Please use Admin Login mode for administrator accounts');
+        return;
+      }
+      
+      // Direct redirect based on mode (bypassing useEffect)
+      if (isAdminMode && result.user?.role === 'admin') {
+        console.log('🟢 [LOGIN] Admin login successful, redirecting to admin dashboard...');
+        navigate('/admin');
+      } else if (!isAdminMode && result.user?.role === 'user') {
+        console.log('🟢 [LOGIN] User login successful, redirecting to user dashboard...');
+        navigate('/dashboard');
+      }
       
     } catch (error) {
       console.error('🔴 [LOGIN] Login failed:', error);
-      alert('🔴 Login failed: ' + error.message);
+      toast.error('Login failed: ' + (error.response?.data?.message || error.message));
     }
   };
 
-  const handleDemoLogin = async () => {
-    try {
-      await login({
-        email: 'demo@excelanalytics.com',
-        password: 'Demo123'
-      }, false); // Demo login doesn't use remember me
-      console.log('Demo login successful, forcing redirect...');
-      window.location.href = '/dashboard';
-    } catch (error) {
-      toast.error('Demo login failed. Please try manual login.');
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
@@ -133,6 +150,39 @@ const LoginPage = () => {
           >
             Sign in to continue to your dashboard
           </motion.p>
+          
+          {/* Login Mode Toggle */}
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="flex items-center justify-center mt-6 space-x-2 bg-gray-100 p-1 rounded-lg"
+          >
+            <button
+              type="button"
+              onClick={() => setIsAdminMode(false)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all ${
+                !isAdminMode
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <User className="h-4 w-4" />
+              <span className="text-sm font-medium">User Login</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAdminMode(true)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all ${
+                isAdminMode
+                  ? 'bg-white text-red-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <Shield className="h-4 w-4" />
+              <span className="text-sm font-medium">Admin Login</span>
+            </button>
+          </motion.div>
         </div>
 
         {/* Login Form */}
@@ -140,7 +190,11 @@ const LoginPage = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="bg-white rounded-2xl shadow-xl p-8 border"
+          className={`bg-white rounded-2xl shadow-xl p-8 border ${
+            isAdminMode 
+              ? 'border-red-200 shadow-red-100' 
+              : 'border-gray-200'
+          }`}
         >
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Field */}
@@ -269,31 +323,6 @@ const LoginPage = () => {
               )}
             </motion.button>
 
-            {/* Divider */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or</span>
-              </div>
-            </div>
-
-            {/* Demo Login Button */}
-            <motion.button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-              whileHover={{ scale: isLoading ? 1 : 1.02 }}
-              whileTap={{ scale: isLoading ? 1 : 0.98 }}
-              className={`w-full py-3 px-4 rounded-lg font-semibold border-2 transition-all duration-200 ${
-                isLoading 
-                  ? 'border-gray-300 text-gray-400 cursor-not-allowed' 
-                  : 'border-gray-300 text-gray-700 hover:border-blue-600 hover:text-blue-600'
-              }`}
-            >
-              Try Demo Account
-            </motion.button>
           </form>
 
           {/* Sign Up Link */}

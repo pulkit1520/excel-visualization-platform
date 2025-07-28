@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { fileService } from '../services/fileService';
 import { analyticsService } from '../services/analyticsService';
 import toast from 'react-hot-toast';
-import { useParams } from 'react-router-dom';
 import { useDashboard } from '../context/DashboardContext';
 import Chart from '../components/Chart';
 import { 
@@ -11,12 +10,8 @@ import {
   FileText, 
   TrendingUp, 
   Plus, 
-  Eye, 
   Calendar,
-  Database,
   ChartBar,
-  Sparkles,
-  ArrowRight,
   ChevronDown,
   Activity,
   PieChart,
@@ -24,12 +19,10 @@ import {
   BarChart,
   Filter,
   Download,
-  Settings,
   Zap
 } from 'lucide-react';
 
 const AnalyticsPage = () => {
-  const { id } = useParams();
   const chartRef = useRef();
   const { notifyAnalysisCreated } = useDashboard();
   const [files, setFiles] = useState([]);
@@ -466,7 +459,7 @@ const handleDownload = () => {
                     {/* Visualization Area */}
                     <div className="bg-white/50 rounded-xl p-6 border border-gray-200 shadow-sm">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-white">Visualization</h3>
+                        <h3 className="text-lg font-semibold text-gray-800">Visualization</h3>
                         <div className="flex items-center space-x-2">
                           <Filter className="w-4 h-4 text-gray-400" />
                           <span className="text-sm text-gray-400">Chart Type: {selectedAnalysis.chartType}</span>
@@ -483,15 +476,10 @@ const handleDownload = () => {
                             </div>
                           </div>
                         ) : selectedAnalysis.data?.processedData && selectedAnalysis.data.processedData.length > 0 ? (
-                          <div>
-                            {console.log('Selected Analysis:', selectedAnalysis)}
-                            {console.log('Processed Data:', selectedAnalysis.data.processedData)}
-                            {console.log('Chart Type:', selectedAnalysis.chartType)}
-<Chart 
-                              ref={chartRef}
-                              analysis={selectedAnalysis} 
-                            />
-                          </div>
+                          <Chart 
+                            ref={chartRef}
+                            analysis={selectedAnalysis} 
+                          />
                         ) : (
                           <div className="flex items-center justify-center h-full min-h-[300px]">
                             <div className="text-center">

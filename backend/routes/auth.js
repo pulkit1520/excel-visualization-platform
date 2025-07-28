@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const User = require('../models/User');
+const { sendOTPEmail, sendPasswordResetConfirmation } = require('../services/emailService');
 const { 
   generateToken, 
   generateRefreshToken, 
@@ -61,6 +62,18 @@ router.post('/register', [
     // Generate tokens
     const token = generateToken(user);
     const refreshToken = generateRefreshToken(user);
+
+    // Ensure new user starts with correct usage statistics
+    // For new users, initialize with actual counts from database
+    const actualFileCount = await require('../models/File').countDocuments({ userId: user._id });
+    if (user.usage.filesUploaded !== actualFileCount) {
+      await User.findByIdAndUpdate(user._id, {
+        'usage.filesUploaded': actualFileCount,
+        'usage.storageUsed': 0 // New users should start with 0 storage
+      });
+      user.usage.filesUploaded = actualFileCount;
+      user.usage.storageUsed = 0;
+    }
 
     // Remove sensitive information from response
     const userResponse = {
@@ -130,6 +143,30 @@ router.post('/login', [
 
     // Update last login
     await user.updateLastLogin();
+
+    // Validate and fix user usage statistics if needed
+    const File = require('../models/File');
+    const actualFileCount = await File.countDocuments({ userId: user._id });
+    const storageAggregation = await File.aggregate([
+      { $match: { userId: user._id } },
+      { $group: { _id: null, totalStorage: { $sum: '$fileSize' } } }
+    ]);
+    const actualStorageUsed = storageAggregation.length > 0 ? storageAggregation[0].totalStorage : 0;
+
+    // If usage statistics are incorrect, fix them
+    if (user.usage.filesUploaded !== actualFileCount || user.usage.storageUsed !== actualStorageUsed) {
+      console.log(`🔧 Fixing usage statistics for user ${user.email}:`);
+      console.log(`   Files: ${user.usage.filesUploaded} → ${actualFileCount}`);
+      console.log(`   Storage: ${user.usage.storageUsed} → ${actualStorageUsed}`);
+      
+      await User.findByIdAndUpdate(user._id, {
+        'usage.filesUploaded': actualFileCount,
+        'usage.storageUsed': actualStorageUsed
+      });
+      
+      user.usage.filesUploaded = actualFileCount;
+      user.usage.storageUsed = actualStorageUsed;
+    }
 
     // Generate tokens
     const token = generateToken(user);
@@ -226,8 +263,178 @@ router.post('/logout', auth, async (req, res) => {
   }
 });
 
+// @route   POST /api/auth/send-reset-otp
+// @desc    Send OTP for password reset
+// @access  Public
+router.post('/send-reset-otp', [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: errors.array() 
+      });
+    }
+
+    const { email } = req.body;
+    
+    const user = await User.findOne({ email });
+    if (!user) {
+      // Don't reveal if user exists or not for security
+      return res.json({ 
+        message: 'If an account with that email exists, an OTP has been sent.', 
+        success: true 
+      });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(400).json({ message: 'Account is deactivated. Please contact support.' });
+    }
+
+    // Generate OTP
+    const otp = user.createPasswordResetOTP();
+    await user.save({ validateBeforeSave: false });
+
+    // Send OTP email
+    try {
+      await sendOTPEmail(email, otp, user.name);
+      console.log(`📧 Password reset OTP sent to ${email}`);
+    } catch (emailError) {
+      console.error('Failed to send OTP email:', emailError);
+      // Continue without failing the request
+    }
+
+    res.json({ 
+      message: 'OTP has been sent to your email address.',
+      success: true,
+      email: email // Return email for verification step
+    });
+  } catch (error) {
+    console.error('Send OTP error:', error);
+    res.status(500).json({ message: 'Server error during OTP generation' });
+  }
+});
+
+// @route   POST /api/auth/verify-reset-otp
+// @desc    Verify OTP for password reset
+// @access  Public
+router.post('/verify-reset-otp', [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+  body('otp')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('OTP must be 6 digits')
+    .isNumeric()
+    .withMessage('OTP must contain only numbers')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: errors.array() 
+      });
+    }
+
+    const { email, otp } = req.body;
+    
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid request' });
+    }
+
+    // Verify OTP
+    const isValidOTP = user.verifyPasswordResetOTP(otp);
+    if (!isValidOTP) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    res.json({ 
+      message: 'OTP verified successfully',
+      success: true,
+      email: email
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({ message: 'Server error during OTP verification' });
+  }
+});
+
+// @route   POST /api/auth/reset-password-with-otp
+// @desc    Reset password using verified OTP
+// @access  Public
+router.post('/reset-password-with-otp', [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+  body('otp')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('OTP must be 6 digits')
+    .isNumeric()
+    .withMessage('OTP must contain only numbers'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: errors.array() 
+      });
+    }
+
+    const { email, otp, password } = req.body;
+    
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid request' });
+    }
+
+    // Verify OTP one more time
+    const isValidOTP = user.verifyPasswordResetOTP(otp);
+    if (!isValidOTP) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    // Update password and clear OTP
+    user.password = password;
+    user.passwordResetOTP = undefined;
+    user.passwordResetOTPExpires = undefined;
+    
+    await user.save();
+
+    // Send confirmation email
+    try {
+      await sendPasswordResetConfirmation(email, user.name);
+      console.log(`📧 Password reset confirmation sent to ${email}`);
+    } catch (emailError) {
+      console.error('Failed to send confirmation email:', emailError);
+      // Don't fail the request if confirmation email fails
+    }
+
+    res.json({ 
+      message: 'Password has been reset successfully',
+      success: true
+    });
+  } catch (error) {
+    console.error('Reset password with OTP error:', error);
+    res.status(500).json({ message: 'Server error during password reset' });
+  }
+});
+
 // @route   POST /api/auth/forgot-password
-// @desc    Send password reset email
+// @desc    Send password reset email (Legacy)
 // @access  Public
 router.post('/forgot-password', [
   body('email')

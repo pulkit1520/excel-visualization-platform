@@ -143,7 +143,7 @@ const LandingPage = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="flex flex-col sm:flex-row gap-4 justify-center"
+              className="flex justify-center"
             >
               <motion.button 
                 whileHover={{ scale: 1.05 }}
@@ -153,14 +153,6 @@ const LandingPage = () => {
               >
                 Get Started
                 <ChevronRight className="ml-2 h-5 w-5" />
-              </motion.button>
-              
-              <motion.button 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:border-blue-600 hover:text-blue-600 transition-colors"
-              >
-                Watch Demo
               </motion.button>
             </motion.div>
           </div>
@@ -177,7 +169,7 @@ const LandingPage = () => {
                 <div className="text-center">
                   <BarChart3 className="h-24 w-24 text-blue-600 mx-auto mb-4" />
                   <h3 className="text-2xl font-semibold text-gray-900 mb-2">Dashboard Preview</h3>
-                  <p className="text-gray-600">Interactive charts and analytics will appear here</p>
+                  <p className="text-gray-600">Interactive charts and analytics</p>
                 </div>
               </div>
             </div>
@@ -347,13 +339,13 @@ const LandingPage = () => {
               <span className="text-xl font-bold">ExcelAnalytics</span>
             </div>
             <div className="flex space-x-6">
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">Terms of Service</a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">Contact</a>
+              <a href="/privacy-policy" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</a>
+              <a href="/terms-of-service" className="text-gray-400 hover:text-white transition-colors">Terms of Service</a>
+             
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center">
-            <p className="text-gray-400">© 2024 ExcelAnalytics. All rights reserved.</p>
+            <p className="text-gray-400">© 2025 ExcelAnalytics. All rights reserved.</p>
           </div>
         </div>
       </footer>

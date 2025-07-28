@@ -42,6 +42,8 @@ const userSchema = new mongoose.Schema({
   },
   passwordResetToken: String,
   passwordResetExpires: Date,
+  passwordResetOTP: String,
+  passwordResetOTPExpires: Date,
   emailVerificationToken: String,
   emailVerified: {
     type: Boolean,
@@ -113,6 +115,20 @@ userSchema.methods.createPasswordResetToken = function() {
   this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
   return resetToken;
+};
+
+// Instance method to generate OTP for password reset
+userSchema.methods.createPasswordResetOTP = function() {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+  this.passwordResetOTP = crypto.createHash('sha256').update(otp).digest('hex');
+  this.passwordResetOTPExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+  return otp;
+};
+
+// Instance method to verify OTP
+userSchema.methods.verifyPasswordResetOTP = function(otp) {
+  const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+  return this.passwordResetOTP === hashedOTP && this.passwordResetOTPExpires > Date.now();
 };
 
 // Instance method to update last login

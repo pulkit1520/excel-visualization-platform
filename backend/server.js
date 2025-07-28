@@ -17,13 +17,13 @@ const app = express();
 app.use(helmet());
 app.use(compression());
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-});
-app.use('/api/', limiter);
+// Rate limiting - TEMPORARILY DISABLED FOR DEBUGGING
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // limit each IP to 100 requests per windowMs
+//   message: 'Too many requests from this IP, please try again later.',
+// });
+// app.use('/api/', limiter);
 
 // CORS configuration
 app.use(cors({
@@ -37,6 +37,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Logging middleware
 app.use(morgan('combined'));
+
+// Debug middleware - log all incoming requests
+app.use((req, res, next) => {
+  console.log(`🔍 [DEBUG] ${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log(`   Headers:`, req.headers);
+  console.log(`   Body:`, req.body);
+  console.log(`   Query:`, req.query);
+  next();
+});
 
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

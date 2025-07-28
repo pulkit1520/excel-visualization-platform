@@ -64,6 +64,12 @@ export const fileService = {
     return response.data;
   },
 
+  // Get dashboard statistics (accurate user-specific stats)
+  getDashboardStats: async () => {
+    const response = await api.get('/files/dashboard-stats');
+    return response.data;
+  },
+
   // Search files
   searchFiles: async (query, options = {}) => {
     const response = await api.get('/files', {

@@ -6,6 +6,7 @@ const XLSX = require('xlsx');
 const { body, validationResult } = require('express-validator');
 const File = require('../models/File');
 const User = require('../models/User');
+const Analysis = require('../models/Analysis');
 const { auth, ownerOrAdmin } = require('../middleware/auth');
 const cloudinaryService = require('../services/cloudinaryService');
 
@@ -324,11 +325,122 @@ router.get('/', auth, async (req, res) => {
 // @access  Private
 router.get('/stats', auth, async (req, res) => {
   try {
-    const stats = await File.getFileStats(req.user.id);
-    res.json({ stats });
+    // Get actual file count from database to ensure accuracy
+    const actualFileCount = await File.countDocuments({ userId: req.user.id });
+    
+    // Get detailed file statistics
+    const stats = await File.aggregate([
+      { $match: { userId: new require('mongoose').Types.ObjectId(req.user.id) } },
+      {
+        $group: {
+          _id: null,
+          totalFiles: { $sum: 1 },
+          totalSize: { $sum: '$fileSize' },
+          processedFiles: { $sum: { $cond: [{ $eq: ['$status', 'processed'] }, 1, 0] } },
+          failedFiles: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+          processingFiles: { $sum: { $cond: [{ $eq: ['$status', 'processing'] }, 1, 0] } },
+          avgFileSize: { $avg: '$fileSize' },
+          maxFileSize: { $max: '$fileSize' },
+          minFileSize: { $min: '$fileSize' }
+        }
+      }
+    ]);
+    
+    const fileStats = stats[0] || {
+      totalFiles: 0,
+      totalSize: 0,
+      processedFiles: 0,
+      failedFiles: 0,
+      processingFiles: 0,
+      avgFileSize: 0,
+      maxFileSize: 0,
+      minFileSize: 0
+    };
+    
+    // Ensure the count matches what we actually have in the database
+    fileStats.totalFiles = actualFileCount;
+    
+    // Get user's stored usage stats for comparison
+    const user = await User.findById(req.user.id).select('usage');
+    
+    res.json({ 
+      stats: fileStats,
+      userUsage: user.usage,
+      userId: req.user.id,
+      isAccurate: user.usage.filesUploaded === actualFileCount
+    });
   } catch (error) {
     console.error('Get file stats error:', error);
     res.status(500).json({ message: 'Server error fetching file statistics' });
+  }
+});
+
+// @route   GET /api/files/dashboard-stats
+// @desc    Get accurate dashboard statistics for user
+// @access  Private
+router.get('/dashboard-stats', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log(`📊 Getting dashboard stats for user: ${userId}`);
+    
+    // Get actual file count and details for this user only
+    const userFiles = await File.find({ userId }).select('originalName fileSize totalRows uploadedAt status');
+    const actualFileCount = userFiles.length;
+    
+    // Calculate actual storage used
+    const actualStorageUsed = userFiles.reduce((total, file) => total + (file.fileSize || 0), 0);
+    
+    // Calculate actual data points (total rows)
+    const actualDataPoints = userFiles.reduce((total, file) => total + (file.totalRows || 0), 0);
+    
+    // Get user's stored usage from database
+    const user = await User.findById(userId).select('usage name email');
+    
+    // Get analytics count for this user
+    const analyticsCount = await Analysis.countDocuments({ userId });
+    
+    console.log(`📊 Dashboard stats calculated:`);
+    console.log(`   - Files: ${actualFileCount}`);
+    console.log(`   - Storage: ${actualStorageUsed} bytes`);
+    console.log(`   - Data Points: ${actualDataPoints}`);
+    console.log(`   - Analytics: ${analyticsCount}`);
+    console.log(`   - User stored usage:`, user.usage);
+    
+    const dashboardStats = {
+      totalFiles: actualFileCount,
+      totalAnalyses: analyticsCount,
+      totalDataPoints: actualDataPoints,
+      totalSize: actualStorageUsed,
+      processedFiles: userFiles.filter(f => f.status === 'processed').length,
+      failedFiles: userFiles.filter(f => f.status === 'failed').length,
+      processingFiles: userFiles.filter(f => f.status === 'processing').length
+    };
+    
+    res.json({
+      userId,
+      userName: user.name,
+      userEmail: user.email,
+      dashboardStats,
+      userStoredUsage: user.usage,
+      filesDetails: userFiles.map(f => ({
+        name: f.originalName,
+        size: f.fileSize,
+        rows: f.totalRows,
+        uploadedAt: f.uploadedAt,
+        status: f.status
+      })),
+      discrepancy: {
+        filesUploadedDiff: user.usage.filesUploaded - actualFileCount,
+        storageUsedDiff: user.usage.storageUsed - actualStorageUsed
+      },
+      isAccurate: {
+        files: user.usage.filesUploaded === actualFileCount,
+        storage: user.usage.storageUsed === actualStorageUsed
+      }
+    });
+  } catch (error) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ message: 'Server error fetching dashboard statistics' });
   }
 });
 
@@ -595,6 +707,80 @@ router.post('/:id/duplicate', auth, ownerOrAdmin(File), async (req, res) => {
   }
 });
 
+// @route   POST /api/files/recalculate-usage
+// @desc    Recalculate user usage statistics
+// @access  Private
+router.post('/recalculate-usage', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Count actual files for this user
+    const fileCount = await File.countDocuments({ userId });
+    
+    // Calculate total storage used
+    const storageAggregation = await File.aggregate([
+      { $match: { userId: new require('mongoose').Types.ObjectId(userId) } },
+      { $group: { _id: null, totalStorage: { $sum: '$fileSize' } } }
+    ]);
+    
+    const totalStorageUsed = storageAggregation.length > 0 ? storageAggregation[0].totalStorage : 0;
+    
+    // Update user's usage statistics
+    const updatedUser = await User.findByIdAndUpdate(userId, {
+      'usage.filesUploaded': fileCount,
+      'usage.storageUsed': totalStorageUsed
+    }, { new: true }).select('usage');
+    
+    res.json({
+      message: 'Usage statistics recalculated successfully',
+      oldUsage: req.user.usage,
+      newUsage: updatedUser.usage,
+      actualFileCount: fileCount,
+      actualStorageUsed: totalStorageUsed
+    });
+  } catch (error) {
+    console.error('Recalculate usage error:', error);
+    res.status(500).json({ message: 'Server error recalculating usage' });
+  }
+});
+
+
+// @route   GET /api/files/usage-debug
+// @desc    Debug user usage statistics
+// @access  Private
+router.get('/usage-debug', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get user's current usage from database
+    const user = await User.findById(userId).select('usage');
+    
+    // Count actual files
+    const actualFileCount = await File.countDocuments({ userId });
+    
+    // Get file details
+    const files = await File.find({ userId }).select('originalName fileSize uploadedAt status');
+    
+    // Calculate actual storage
+    const actualStorageUsed = files.reduce((total, file) => total + file.fileSize, 0);
+    
+    res.json({
+      userId,
+      userUsageFromDB: user.usage,
+      actualFileCount,
+      actualStorageUsed,
+      filesInDB: files,
+      discrepancy: {
+        filesUploadedDiff: user.usage.filesUploaded - actualFileCount,
+        storageUsedDiff: user.usage.storageUsed - actualStorageUsed
+      }
+    });
+  } catch (error) {
+    console.error('Usage debug error:', error);
+    res.status(500).json({ message: 'Server error debugging usage' });
+  }
+});
+
 // @route   GET /api/files/:id/columns
 // @desc    Get file columns for dropdowns
 // @access  Private
@@ -648,6 +834,5 @@ router.get('/:id/columns', auth, ownerOrAdmin(File), async (req, res) => {
     res.status(500).json({ message: 'Server error fetching file columns' });
   }
 });
-
 
 module.exports = router;
