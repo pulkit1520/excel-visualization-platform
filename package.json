@@ -2,7 +2,7 @@
   "name": "excel-analytics-platform",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd Project\\frontend && npm install && npm run build",
+    "build": "cd Project/frontend && npm install && npm run build",
     "start": "cd Project/backend && npm start",
     "dev:frontend": "cd Project/frontend && npm start",
     "dev:backend": "cd Project/backend && npm run dev",

@@ -1,13 +1,8 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "Project/frontend/build",
   "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "Project/frontend/build"
-      }
-    },
     {
       "src": "Project/backend/server.js",
       "use": "@vercel/node"
