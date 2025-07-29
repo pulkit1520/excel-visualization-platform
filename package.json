@@ -1,0 +1,14 @@
+{
+  "name": "excel-analytics-platform",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "cd Project/frontend && npm install && npm run build",
+    "start": "cd Project/backend && npm start",
+    "dev:frontend": "cd Project/frontend && npm start",
+    "dev:backend": "cd Project/backend && npm run dev",
+    "install:frontend": "cd Project/frontend && npm install",
+    "install:backend": "cd Project/backend && npm install",
+    "install:all": "npm run install:frontend && npm run install:backend"
+  },
+  "description": "Full-stack Excel Analytics Platform"
+}
